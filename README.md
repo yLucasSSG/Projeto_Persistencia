@@ -1,168 +1,150 @@
 # Projeto de Persistência Bancária
 
-Implementação em Java com Spring Boot, Spring Data JPA e MySQL, baseada nos diagramas do sistema bancário das atividades anteriores.
+Projeto acadêmico em Java com Spring Boot, Spring Data JPA e MySQL, baseado nos diagramas de pacotes, sequência e implantação do sistema bancário.
 
-## Objetivo da atividade
+A implementação contempla persistência de contas, débitos, transferências e pagamentos, com consulta dos registros após reiniciar as aplicações. A comunicação ao Banco Central é simulada e registrada no MySQL.
 
-Implementar a persistência das classes que precisam ser armazenadas em um banco de dados, utilizando Spring. A entrega é o código-fonte ou o link de um repositório público no GitHub.
+## Requisitos da atividade
 
-O enunciado permite SQLite, mas este projeto utiliza MySQL. O foco é a persistência dos dados de Saldo, Transferências e Pagamentos.
-
-## Desenvolvimento por etapas
-
-O projeto está na **etapa 5: persistência de pagamentos e transferências**. A implementação das três áreas está pronta; a conferência integrada e a documentação final são a etapa seguinte.
-
-| Etapa | Situação |
+| Requisito apresentado | Como foi atendido |
 | --- | --- |
-| Configurar Spring Boot, Spring Data JPA e o driver MySQL | Implementada |
-| Mapear Conta e criar seu repositório | Implementada |
-| Gravar e consultar contas no MySQL pela API | Implementada |
-| Validar cadastro e impedir números de conta repetidos | Implementada |
-| Consultar o saldo atual da conta | Implementada |
-| Implementar débito de saldo e tratar saldo insuficiente | Implementada |
-| Implementar a persistência de Transferências | Implementada |
-| Implementar a persistência de Pagamentos | Implementada |
-| Verificar contas após reiniciar a aplicação | Verificada no teste de integração |
+| Considerar o projeto bancário anterior | Mantidos os serviços Saldo, Transferências e Pagamentos, suas modalidades e os dois caminhos de movimentação |
+| Persistir as classes que precisam ser armazenadas | Entidades JPA e repositórios para Conta, Debito, Transferencia, Pagamento e ComunicacaoBancoCentral |
+| Utilizar a estrutura do Spring | Spring Boot, Spring Data JPA, Hibernate, serviços transacionais e controllers REST |
+| Utilizar banco de dados | MySQL; SQLite foi apresentado como uma possibilidade, não uma obrigação |
+| Entregar código ou GitHub público | Código disponível neste repositório público |
 
-## Relação com os diagramas
+O cenário anterior exige comunicar todas as transferências e pagamentos concluídos ao serviço do Banco Central. Isso inclui pagamento com saldo em conta. Operações recusadas por saldo insuficiente seguem o caminho alternativo dos diagramas e não geram comunicação de conclusão.
 
-Os três serviços mantêm as responsabilidades definidas nos diagramas:
+## Organização
 
-| Serviço | Dados previstos |
-| --- | --- |
-| Saldo | Contas e saldos disponíveis |
-| Transferências | Identificador da transação, origem, destino, valor, modalidade e situação |
-| Pagamentos | Identificador da transação, conta, destino ou código de barras, valor, modalidade e situação |
+São três aplicações independentes, com uma base para cada serviço no mesmo servidor MySQL:
 
-Cada serviço terá uma aplicação Spring Boot e uma base própria no mesmo servidor MySQL. Os serviços Saldo, Transferências e Pagamentos estão implementados. O saldo fica armazenado em Conta; o nome do serviço não obriga a criação de uma entidade chamada Saldo.
+| Aplicação | Porta padrão | Base padrão | Tabelas |
+| --- | --- | --- | --- |
+| `saldo-service` | 8081 | `banco_saldo` | `contas`, `debitos` |
+| `transferencias-service` | 8082 | `banco_transferencias` | `transferencias`, `comunicacoes_banco_central` |
+| `pagamentos-service` | 8083 | `banco_pagamentos` | `pagamentos`, `comunicacoes_banco_central` |
 
-As transferências contemplarão PIX, TED e DOC, e os pagamentos contemplarão PIX, boleto e saldo em conta. DOC será mantido no modelo didático por fazer parte do enunciado.
+Transferências e Pagamentos acessam o saldo pela API de Saldo. Não consultam diretamente as tabelas de outro serviço. Por isso, o identificador da conta nas ordens é um valor, e não uma associação JPA entre bancos distintos.
 
-A exigência anterior de comunicar as transferências e os pagamentos ao serviço do Banco Central permanece como regra do projeto. A implementação de uma integração real com o Banco Central não é solicitada no enunciado de persistência apresentado.
-
-## Tecnologias
-
-- Java 21
-- Spring Boot 4.1.2
-- Spring Data JPA e Hibernate
-- MySQL
-- Maven Wrapper, incluído no projeto
-
-## Estrutura atual
+Cada aplicação utiliza **Controller → Service → Repository → MySQL**. Os DTOs definem os dados de entrada e saída; as entidades representam as tabelas. Enums são armazenados como texto. Valores monetários usam `BigDecimal` e colunas `DECIMAL(19,2)`.
 
 ```text
 Projeto_Persistencia/
-├── database/
-│   └── 01-criar-banco-saldo.sql
-├── saldo-service/
-│   ├── src/main/java/br/com/banco/saldo/
-│   │   ├── controller/
-│   │   ├── dto/
-│   │   ├── exception/
-│   │   ├── model/Conta.java
-│   │   ├── repository/ContaRepository.java
-│   │   ├── service/ContaService.java
-│   │   └── SaldoServiceApplication.java
-│   ├── src/main/resources/application.properties
-│   ├── src/test/java/br/com/banco/saldo/ContaPersistenciaIT.java
-│   ├── contas.http
-│   ├── pom.xml
-│   ├── mvnw
-│   └── mvnw.cmd
+├── database/                    # Scripts para criar as três bases
+├── saldo-service/               # Contas e autorização de débito
+├── transferencias-service/      # PIX, TED e DOC
+├── pagamentos-service/          # PIX, boleto e saldo em conta
+├── scripts/verificar_integracao.py
+├── pom.xml                      # Compila os três serviços
+├── mvnw / mvnw.cmd
 └── README.md
 ```
 
-## O que foi implementado
+## Pré-requisitos
 
-`Conta` é uma entidade JPA mapeada para a tabela `contas`:
+- JDK 21 configurado no `JAVA_HOME`.
+- MySQL iniciado. Os testes foram executados com MySQL 8.4.
+- Acesso à internet na primeira compilação para baixar Maven e dependências.
 
-| Campo | Tipo Java | Mapeamento |
-| --- | --- | --- |
-| id | Long | Chave primária gerada pelo MySQL |
-| numero | String | Obrigatório, único e com até 30 caracteres |
-| saldo | BigDecimal | Obrigatório, com 19 dígitos no total e 2 casas decimais |
+O Maven Wrapper está incluído; não é necessário instalar Maven separadamente. Docker e Python são necessários somente para os testes indicados adiante, não para executar as aplicações com seu MySQL instalado.
 
-`ContaRepository` estende `JpaRepository<Conta, Long>`. O Spring fornece operações como `save`, `findById` e `findAll`. O método `findByNumero` permite buscar a conta pelo número.
+## Preparar e compilar
 
-`ContaController` recebe as requisições HTTP e valida os dados. `ContaService` coordena o cadastro e a consulta em transações. `ContaRepository` utiliza o JPA para acessar o MySQL.
+Clone o repositório:
 
-O fluxo é **Controller → Service → Repository → MySQL**. Os DTOs definem os campos recebidos e devolvidos pela API. As respostas não expõem diretamente a entidade JPA.
-
-No cadastro, o número é obrigatório, tem até 30 caracteres e é armazenado sem espaços nas extremidades. O saldo inicial é obrigatório, não pode ser negativo e aceita até 17 dígitos inteiros e 2 casas decimais. Valores com casas decimais excedentes são rejeitados, sem arredondamento silencioso. A restrição única do MySQL impede que duas requisições cadastrem o mesmo número de conta.
-
-O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. As ordens de transferência e pagamento utilizam o serviço Saldo para autorizar o débito.
-
-### Débito atômico
-
-`POST /contas/{id}/debitos` recebe `idTransacao` (UUID) `valor` positivo, com no máximo duas casas decimais, e `referencia` da operação. Retorna `AUTORIZADO` ou `SALDO_INSUFICIENTE`. Ambos são resultados de negócio com HTTP 200.
-
-```json
-{
-  "idTransacao": "8752570c-bf72-4ba5-a27c-e1c4c88b7b18",
-  "valor": 30.25,
-  "referencia": "DEBITO-DEMONSTRACAO"
-}
+```bash
+git clone https://github.com/yLucasSSG/Projeto_Persistencia.git
+cd Projeto_Persistencia
 ```
 
-Saldo bloqueia a conta para escrita durante a transação no MySQL. A validação, o desconto e o registro em `debitos` são confirmados juntos. Operações simultâneas não conseguem gastar o mesmo saldo.
+No MySQL Workbench ou em outro cliente SQL, execute os três arquivos de `database/`. Eles criam as bases sem apagar registros existentes. O usuário configurado em cada aplicação precisa ter acesso à sua base e permissão para criar e atualizar tabelas.
 
-Reenviar o mesmo identificador, conta, valor e referência devolve o resultado registrado sem novo desconto, inclusive após reiniciar a aplicação. Reutilizar o identificador com dados diferentes retorna HTTP 409. Uma tentativa recusada também permanece registrada; para tentar uma nova operação, utilize um novo identificador.
+As tabelas são criadas pelo JPA na primeira inicialização. Durante este projeto acadêmico, `spring.jpa.hibernate.ddl-auto=update` mantém os mapeamentos sincronizados com o banco.
 
-## Preparar o MySQL
-
-Com o MySQL iniciado, execute o arquivo `database/01-criar-banco-saldo.sql` pelo MySQL Workbench ou por outro cliente SQL. Ele cria a base `banco_saldo` sem apagar registros existentes.
-
-O usuário configurado na aplicação precisa ter permissão para criar e alterar tabelas nessa base. O projeto usa `spring.jpa.hibernate.ddl-auto=update` para criar ou atualizar a tabela a partir da entidade durante o desenvolvimento.
-
-## Configurar e executar
-
-Abra um terminal na pasta do repositório e configure as variáveis de ambiente da conexão. Substitua os valores de exemplo pelos dados da sua instalação. A senha não deve ser escrita no código nem enviada ao GitHub.
-
-### Windows PowerShell
+Compile os três serviços na raiz do projeto:
 
 ```powershell
-$env:MYSQL_HOST = "localhost"
-$env:MYSQL_PORT = "3306"
-$env:MYSQL_DATABASE = "banco_saldo"
-$env:MYSQL_USER = "root"
-$env:MYSQL_PASSWORD = "SUA_SENHA_LOCAL"
-
-cd saldo-service
-.\mvnw.cmd spring-boot:run
+# Windows PowerShell
+.\mvnw.cmd clean package
 ```
 
-### Linux ou macOS
+```bash
+# Linux ou macOS
+./mvnw clean package
+```
+
+Os JARs são gerados na pasta `target/` de cada serviço. Esse comando não conecta ao MySQL e não executa os testes de integração.
+
+## Executar com seu MySQL
+
+Cada serviço precisa de um terminal próprio. Configure a conexão em **cada terminal**, substituindo os valores de exemplo pelos dados da sua instalação. A senha não deve ser salva no código ou enviada ao GitHub.
+
+```powershell
+# Windows PowerShell: repetir em cada terminal
+$env:MYSQL_HOST = "localhost"
+$env:MYSQL_PORT = "3306"
+$env:MYSQL_USER = "root"
+$env:MYSQL_PASSWORD = "SUA_SENHA_LOCAL"
+```
+
+Na raiz do repositório, execute os comandos correspondentes em três terminais:
+
+```powershell
+# Terminal 1: Saldo
+$env:MYSQL_DATABASE = "banco_saldo"
+$env:SERVER_PORT = "8081"
+.\mvnw.cmd -pl saldo-service spring-boot:run
+```
+
+```powershell
+# Terminal 2: Transferências
+$env:MYSQL_DATABASE = "banco_transferencias"
+$env:SERVER_PORT = "8082"
+$env:SALDO_URL = "http://localhost:8081"
+.\mvnw.cmd -pl transferencias-service spring-boot:run
+```
+
+```powershell
+# Terminal 3: Pagamentos
+$env:MYSQL_DATABASE = "banco_pagamentos"
+$env:SERVER_PORT = "8083"
+$env:SALDO_URL = "http://localhost:8081"
+.\mvnw.cmd -pl pagamentos-service spring-boot:run
+```
+
+No Linux ou macOS, use `export VARIAVEL=valor` no lugar de `$env:VARIAVEL = "valor"` e `./mvnw` no lugar de `.\mvnw.cmd`. Por exemplo, no terminal de Saldo:
 
 ```bash
 export MYSQL_HOST=localhost
 export MYSQL_PORT=3306
-export MYSQL_DATABASE=banco_saldo
 export MYSQL_USER=root
 export MYSQL_PASSWORD='SUA_SENHA_LOCAL'
-
-cd saldo-service
-./mvnw spring-boot:run
+export MYSQL_DATABASE=banco_saldo
+export SERVER_PORT=8081
+./mvnw -pl saldo-service spring-boot:run
 ```
 
-Configure as variáveis no mesmo terminal que executará o comando. Se utilizar uma IDE, cadastre essas variáveis na configuração de execução.
+Se utilizar uma IDE, configure essas variáveis na execução de cada aplicação. Inicie Saldo antes de processar transferências ou pagamentos.
 
-Não é necessário instalar Maven separadamente. O Maven Wrapper faz o download na primeira execução. É necessário ter o JDK 21 configurado e acesso à internet para baixar as dependências.
+## Operações disponíveis
 
-Após iniciar, a API fica disponível em `http://localhost:8081`. A porta pode ser alterada pela variável `SERVER_PORT`. Para conferir a estrutura no MySQL:
-
-```sql
-USE banco_saldo;
-DESCRIBE contas;
-```
-
-## Cadastrar e consultar uma conta
-
-| Método | Endereço | Resultado |
+| Serviço | Método e endereço | Resultado |
 | --- | --- | --- |
-| POST | `/contas` | Cadastra uma conta e retorna HTTP 201 |
-| GET | `/contas/{id}` | Consulta a conta e seu saldo atual; retorna HTTP 200 |
+| Saldo | `POST /contas` | Cadastra conta e saldo inicial; HTTP 201 |
+| Saldo | `GET /contas/{id}` | Consulta conta e saldo; HTTP 200 |
+| Saldo | `POST /contas/{id}/debitos` | Autoriza ou recusa débito; HTTP 200 |
+| Transferências | `POST /transferencias` | Registra e processa uma ordem; HTTP 200 |
+| Transferências | `GET /transferencias/{idTransacao}` | Consulta ordem persistida; HTTP 200 |
+| Pagamentos | `POST /pagamentos` | Registra e processa uma ordem; HTTP 200 |
+| Pagamentos | `GET /pagamentos/{idTransacao}` | Consulta ordem persistida; HTTP 200 |
 
-Exemplo do corpo JSON do cadastro:
+Arquivos `*.http` em cada serviço contêm exemplos para clientes HTTP de IDEs. Também é possível usar Postman, Insomnia, curl ou PowerShell.
+
+### 1. Cadastrar uma conta
+
+Envie para `POST http://localhost:8081/contas`:
 
 ```json
 {
@@ -171,9 +153,7 @@ Exemplo do corpo JSON do cadastro:
 }
 ```
 
-### Windows PowerShell
-
-Com a aplicação executando, abra outro terminal:
+Exemplo no PowerShell, com os serviços em execução:
 
 ```powershell
 $dados = @{ numero = "1001"; saldoInicial = 150.25 } | ConvertTo-Json
@@ -182,97 +162,19 @@ $conta
 Invoke-RestMethod -Uri "http://localhost:8081/contas/$($conta.id)"
 ```
 
-### Linux ou macOS
+No Linux ou macOS:
 
 ```bash
 curl -i -X POST http://localhost:8081/contas \
   -H 'Content-Type: application/json' \
   -d '{"numero":"1001","saldoInicial":150.25}'
-
-# Substitua 1 pelo id devolvido no cadastro.
-curl -i http://localhost:8081/contas/1
 ```
 
-A resposta contém `id`, `numero` e `saldo`. O cabeçalho `Location` do cadastro informa o endereço de consulta. O arquivo `saldo-service/contas.http` também contém exemplos para clientes HTTP de IDEs.
+A resposta contém `id`, `numero` e `saldo`. Anote o `id` para as próximas operações. O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência; não existe edição direta do saldo pela API.
 
-Se cadastrar novamente o mesmo número, a API retorna HTTP 409. Para criar outra conta, utilize outro número.
+### 2. Fazer uma transferência
 
-| Situação | Resposta HTTP |
-| --- | --- |
-| Dados obrigatórios ausentes, saldo inválido ou JSON inválido | 400 |
-| Identificador com formato inválido, como `/contas/abc` | 400 |
-| Conta não encontrada | 404 |
-| Número de conta já cadastrado | 409 |
-
-Os erros retornam um JSON com `mensagem` e `detalhes`.
-
-## Conferir a persistência após reiniciar
-
-1. Cadastre uma conta e anote o `id` retornado.
-2. Confira o registro diretamente no MySQL:
-
-```sql
-SELECT id, numero, saldo FROM banco_saldo.contas;
-```
-
-3. Encerre a aplicação com `Ctrl+C` e inicie novamente, mantendo a mesma configuração de conexão.
-4. Consulte `/contas/{id}` com o identificador anotado. O número e o saldo devem continuar disponíveis.
-
-Essa verificação demonstra que os dados estão no MySQL, e não apenas na memória da aplicação.
-
-## Compilar
-
-Dentro de `saldo-service`, execute:
-
-```powershell
-.\mvnw.cmd clean package
-```
-
-No Linux ou macOS:
-
-```bash
-./mvnw clean package
-```
-
-A compilação gera o JAR em `saldo-service/target/`. O comando `clean package` não precisa de uma conexão com MySQL e não executa os testes de integração.
-
-## Testes de integração com MySQL
-
-Os testes utilizam Testcontainers para iniciar um MySQL 8.4 temporário. É necessário ter Docker em execução. A aplicação normal utiliza o MySQL configurado nas variáveis de ambiente; Docker é necessário somente para executar estes testes.
-
-Dentro de `saldo-service`, execute no Windows:
-
-```powershell
-.\mvnw.cmd -Pmysql-it clean verify
-```
-
-No Linux ou macOS:
-
-```bash
-./mvnw -Pmysql-it clean verify
-```
-
-Os testes verificam:
-
-- Gravação pela API, consulta direta no MySQL e consulta HTTP após reiniciar a aplicação.
-- Rejeição de dados inválidos sem gravar registros.
-- Cadastro com saldo zero e rejeição de número repetido sem alterar a conta existente.
-- Respostas para conta inexistente e identificador inválido.
-- Duas tentativas simultâneas de cadastro com o mesmo número, persistindo apenas uma conta.
-
-Os testes usam exclusivamente a base temporária do contêiner, com credenciais próprias, e não dependem da senha do MySQL local. Os relatórios ficam em `saldo-service/target/failsafe-reports/`.
-
-
-## Transferências
-
-O serviço `transferencias-service` utiliza a porta 8082 e a base `banco_transferencias`. Execute `database/02-criar-banco-transferencias.sql` e inicie o serviço em outro terminal, com as variáveis da conexão MySQL configuradas e `MYSQL_DATABASE=banco_transferencias`. Depois execute o Maven Wrapper na pasta `transferencias-service`.
-
-`SALDO_URL` define a URL de Saldo e usa `http://localhost:8081` por padrão. Cada aplicação precisa de seu próprio terminal e de sua própria configuração de base e porta. Não reutilize a base `banco_saldo` para Transferências.
-
-- `POST /transferencias`: registra e processa uma ordem PIX, TED ou DOC.
-- `GET /transferencias/{idTransacao}`: consulta uma ordem persistida.
-
-Exemplo de JSON:
+Envie para `POST http://localhost:8082/transferencias`, usando o identificador da conta criada:
 
 ```json
 {
@@ -284,24 +186,116 @@ Exemplo de JSON:
 }
 ```
 
-A solicitação é gravada como `PENDENTE` antes de chamar Saldo. Se autorizada, a ordem e sua comunicação ao Banco Central simulado são confirmadas na base de Transferências. Se faltar saldo, a situação fica `SALDO_INSUFICIENTE`. Uma indisponibilidade de Saldo retorna HTTP 503 e mantém a ordem pendente para reenvio com os mesmos dados.
+As modalidades são `PIX`, `TED` e `DOC`. Para cada nova operação, gere um novo UUID. Para repetir uma solicitação, mantenha o UUID e todos os dados originais.
 
-Reenviar o mesmo UUID e os mesmos dados devolve a ordem existente sem repetir o débito nem a comunicação. Alterar os dados de um UUID já utilizado retorna HTTP 409. Os endpoints de operação retornam HTTP 200 com a situação de negócio.
+### 3. Fazer um pagamento
 
-O adaptador `BancoCentralSimulado` registra a comunicação na tabela `comunicacoes_banco_central`, gerando um protocolo com prefixo `SIM-`. Não há chamada ao Banco Central real, liquidação externa ou crédito real no destino. DOC é mantido para atender ao cenário didático.
+Envie para `POST http://localhost:8083/pagamentos`:
 
-Os testes de Transferências usam MySQL real em Testcontainers e um simulador HTTP de Saldo, verificando todas as modalidades, reinício, saldo insuficiente, repetição, concorrência e retomada de ordens pendentes. Execute `./mvnw -Pmysql-it clean verify` nessa pasta, ou `mvnw.cmd` no Windows.
+```json
+{
+  "idTransacao": "9d352e18-f35c-46b7-be94-8a39b260e3f6",
+  "contaId": 1,
+  "codigoBarras": "codigo-de-barras-didatico",
+  "valor": 10.00,
+  "modalidade": "BOLETO"
+}
+```
 
+As modalidades são `PIX`, `BOLETO` e `SALDO_EM_CONTA`. Boleto exige `codigoBarras` e não recebe `destino`. As outras duas modalidades exigem `destino` e não recebem `codigoBarras`.
 
-## Pagamentos
+A resposta da ordem contém os dados persistidos, a situação e o protocolo da comunicação simulada, quando concluída. A consulta usa o mesmo UUID: `/transferencias/{idTransacao}` ou `/pagamentos/{idTransacao}`.
 
-O serviço `pagamentos-service` utiliza a porta 8083 e a base `banco_pagamentos`. Execute `database/03-criar-banco-pagamentos.sql` e inicie o serviço em um terceiro terminal com `MYSQL_DATABASE=banco_pagamentos`, a conexão MySQL configurada e Saldo em execução.
+## Regras e consistência
 
-- `POST /pagamentos`: registra e processa PIX, boleto ou saldo em conta.
-- `GET /pagamentos/{idTransacao}`: consulta uma ordem persistida.
+- Número de conta obrigatório, único e com até 30 caracteres; espaços nas extremidades são removidos.
+- Saldo inicial não negativo. Movimentações com valor estritamente positivo.
+- Valores com até 17 dígitos inteiros e 2 casas decimais. Casas excedentes são rejeitadas, sem arredondamento silencioso.
+- Saldo usa bloqueio de escrita na conta durante a transação MySQL. Verificação, desconto e registro do débito são confirmados juntos.
+- Repetir um débito com o mesmo UUID, conta, valor e referência devolve o resultado anterior sem novo desconto, inclusive após reinício. Dados diferentes para o mesmo UUID retornam HTTP 409.
+- Transferências e Pagamentos gravam a ordem como `PENDENTE` em uma transação antes de chamar Saldo. O processamento usa outro limite transacional e bloqueia a ordem para impedir processamento simultâneo duplicado.
+- Se autorizado, o serviço registra a comunicação simulada e conclui a ordem. Se faltar saldo, grava `SALDO_INSUFICIENTE`, mantendo o saldo da conta.
+- Se a chamada a Saldo falhar, a ordem permanece pendente. Reenviar a mesma solicitação permite retomar; a idempotência em Saldo protege também o caso em que o débito foi confirmado, mas sua resposta se perdeu.
+- Repetir uma ordem concluída ou recusada não repete o débito nem a comunicação. Uma nova tentativa de negócio exige novo UUID.
 
-O corpo segue o modelo de Transferências, com as modalidades `PIX`, `BOLETO` e `SALDO_EM_CONTA`. PIX e saldo em conta exigem `destino`. Boleto exige `codigoBarras` e não recebe `destino`. Veja os três exemplos em `pagamentos-service/pagamentos.http`.
+As situações de ordem são `PENDENTE`, `CONCLUIDA` e `SALDO_INSUFICIENTE`. O resultado do serviço Saldo é `AUTORIZADO` ou `SALDO_INSUFICIENTE`.
 
-Todas as modalidades concluídas geram uma comunicação persistida ao Banco Central simulado, inclusive saldo em conta, conforme a regra do professor. Os caminhos de saldo insuficiente, repetição e retomada são os mesmos de Transferências. Cada serviço possui suas próprias tabelas de ordens e comunicações.
+| Situação | Resposta HTTP |
+| --- | --- |
+| Dados, JSON, modalidade ou identificador inválidos | 400 |
+| Conta ou ordem não encontrada | 404 |
+| Número de conta repetido ou UUID reutilizado com outros dados | 409 |
+| Saldo indisponível ou resposta inválida | 503; ordem preservada como pendente |
 
-Os testes de Pagamentos incluem a validação dos campos específicos de boleto e das demais modalidades. Execute `./mvnw -Pmysql-it clean verify` na pasta do serviço, ou `mvnw.cmd` no Windows.
+Os erros de domínio retornam `mensagem` e `detalhes`. Saldo insuficiente é um resultado de negócio e utiliza HTTP 200.
+
+### Banco Central e escopo didático
+
+`BancoCentralSimulado` persiste uma comunicação por ordem concluída e gera o protocolo `SIM-{idTransacao}`. Todas as modalidades usam esse adaptador, inclusive pagamento com saldo em conta, conforme o enunciado anterior.
+
+Não há integração com instituições financeiras reais, liquidação externa ou crédito na conta de destino. O objetivo desta entrega é persistir e demonstrar as classes e os fluxos do projeto acadêmico. DOC permanece como modalidade didática, conforme solicitado no cenário. Identificadores de destino e códigos de barras são dados de demonstração.
+
+## Comprovar a persistência
+
+1. Cadastre uma conta e faça uma operação; anote o ID da conta e o UUID da ordem.
+2. Confira os registros diretamente no MySQL:
+
+```sql
+SELECT id, numero, saldo FROM banco_saldo.contas;
+SELECT id_transacao, conta_id, valor, resultado FROM banco_saldo.debitos;
+SELECT id_transacao, modalidade, situacao, valor FROM banco_transferencias.transferencias;
+SELECT id_transacao, modalidade, situacao, valor FROM banco_pagamentos.pagamentos;
+SELECT id_transacao, protocolo FROM banco_transferencias.comunicacoes_banco_central;
+SELECT id_transacao, protocolo FROM banco_pagamentos.comunicacoes_banco_central;
+```
+
+3. Encerre as aplicações com `Ctrl+C` e inicie novamente, com a mesma configuração de bases.
+4. Consulte os mesmos identificadores. Os saldos, as ordens e os protocolos devem continuar disponíveis.
+5. Reenvie uma ordem concluída com os mesmos dados e confira que o saldo não foi descontado novamente.
+
+Para demonstrar o caminho de saldo insuficiente, crie outra conta com saldo zero e solicite uma operação de valor positivo.
+
+## Testes automatizados
+
+### Testes de cada serviço
+
+É necessário ter Docker em execução. Testcontainers inicia um MySQL 8.4 temporário, sem acessar o MySQL instalado no seu computador.
+
+```powershell
+# Windows: na raiz do projeto
+.\mvnw.cmd -Pmysql-it clean verify
+```
+
+```bash
+# Linux ou macOS
+./mvnw -Pmysql-it clean verify
+```
+
+São 24 testes de integração: 11 em Saldo, 6 em Transferências e 7 em Pagamentos. Cobrem persistência após reinício, validações, saldo insuficiente, idempotência, concorrência, modalidades e retomada de ordens pendentes. Os testes de Transferências e Pagamentos usam um simulador HTTP de Saldo para controlar respostas e falhas.
+
+Os relatórios ficam em `target/failsafe-reports/` de cada serviço. Para testar somente um serviço, adicione `-pl nome-do-service` ao comando da raiz.
+
+### Integração dos três serviços reais
+
+Com os JARs compilados, JDK 21, Docker e Python 3 disponíveis:
+
+```bash
+python scripts/verificar_integracao.py
+```
+
+O script cria um MySQL temporário com três bases e três usuários restritos às suas respectivas bases. Inicia os três JARs reais e verifica:
+
+- As seis modalidades, com sucesso e saldo insuficiente.
+- Reenvios sem débito ou comunicação duplicados.
+- Concorrência sobre o mesmo saldo e conflito de UUID entre serviços.
+- Ordem pendente após indisponibilidade e recuperação de um débito cuja resposta se perdeu.
+- Consulta após reiniciar as três aplicações e correspondência entre ordens concluídas e comunicações.
+- Bloqueio do acesso direto de um serviço à base de outro.
+
+Os processos e o contêiner de teste são removidos ao final. Os logs ficam em uma pasta temporária informada pelo script.
+
+## Etapas e entrega
+
+O histórico do Git separa a implementação em estrutura inicial, cadastro de contas, débito atômico, Transferências, Pagamentos e verificação integrada. O README contém as instruções para executar e demonstrar a atividade.
+
+Repositório público para entrega: https://github.com/yLucasSSG/Projeto_Persistencia

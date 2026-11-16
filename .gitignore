@@ -7,3 +7,5 @@
 !.env.example
 **/application-local.properties
 **/application-local.yml
+**/__pycache__/
+*.pyc
