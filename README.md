@@ -10,17 +10,19 @@ O enunciado permite SQLite, mas este projeto utiliza MySQL. O foco é a persist�
 
 ## Desenvolvimento por etapas
 
-O projeto está na **etapa 1: estrutura do serviço Saldo e mapeamento de Conta**. Esta versão ainda não é a entrega completa.
+O projeto está na **etapa 2: cadastro e consulta de contas no MySQL**. Esta versão ainda não é a entrega completa: falta a persistência de Transferências e Pagamentos.
 
 | Etapa | Situação |
 | --- | --- |
 | Configurar Spring Boot, Spring Data JPA e o driver MySQL | Implementada |
 | Mapear Conta e criar seu repositório | Implementada |
-| Demonstrar gravação e consulta de contas no MySQL | Próxima etapa |
-| Implementar as regras de consulta e débito de saldo | Pendente |
+| Gravar e consultar contas no MySQL pela API | Implementada |
+| Validar cadastro e impedir números de conta repetidos | Implementada |
+| Consultar o saldo atual da conta | Implementada |
+| Implementar débito de saldo e tratar saldo insuficiente | Próxima etapa |
 | Implementar a persistência de Transferências | Pendente |
 | Implementar a persistência de Pagamentos | Pendente |
-| Verificar os dados após reiniciar as aplicações | Pendente |
+| Verificar contas após reiniciar a aplicação | Verificada no teste de integração |
 
 ## Relação com os diagramas
 
@@ -54,10 +56,16 @@ Projeto_Persistencia/
 │   └── 01-criar-banco-saldo.sql
 ├── saldo-service/
 │   ├── src/main/java/br/com/banco/saldo/
+│   │   ├── controller/
+│   │   ├── dto/
+│   │   ├── exception/
 │   │   ├── model/Conta.java
 │   │   ├── repository/ContaRepository.java
+│   │   ├── service/ContaService.java
 │   │   └── SaldoServiceApplication.java
 │   ├── src/main/resources/application.properties
+│   ├── src/test/java/br/com/banco/saldo/ContaPersistenciaIT.java
+│   ├── contas.http
 │   ├── pom.xml
 │   ├── mvnw
 │   └── mvnw.cmd
@@ -76,7 +84,13 @@ Projeto_Persistencia/
 
 `ContaRepository` estende `JpaRepository<Conta, Long>`. O Spring fornece operações como `save`, `findById` e `findAll`. O método `findByNumero` permite buscar a conta pelo número.
 
-Ainda serão adicionadas as validações de entrada e as operações de negócio. Esta etapa não disponibiliza endpoints HTTP nem uma demonstração de gravação e consulta.
+`ContaController` recebe as requisições HTTP e valida os dados. `ContaService` coordena o cadastro e a consulta em transações. `ContaRepository` utiliza o JPA para acessar o MySQL.
+
+O fluxo é **Controller → Service → Repository → MySQL**. Os DTOs definem os campos recebidos e devolvidos pela API. As respostas não expõem diretamente a entidade JPA.
+
+No cadastro, o número é obrigatório, tem até 30 caracteres e é armazenado sem espaços nas extremidades. O saldo inicial é obrigatório, não pode ser negativo e aceita até 17 dígitos inteiros e 2 casas decimais. Valores com casas decimais excedentes são rejeitados, sem arredondamento silencioso. A restrição única do MySQL impede que duas requisições cadastrem o mesmo número de conta.
+
+O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. Débitos, transferências e pagamentos serão implementados nas próximas etapas.
 
 ## Preparar o MySQL
 
@@ -118,14 +132,79 @@ Configure as variáveis no mesmo terminal que executará o comando. Se utilizar 
 
 Não é necessário instalar Maven separadamente. O Maven Wrapper faz o download na primeira execução. É necessário ter o JDK 21 configurado e acesso à internet para baixar as dependências.
 
-Nesta etapa, a aplicação inicializa o JPA e cria ou atualiza a tabela `contas`, mas ainda não executa movimentações. Como ainda não há servidor HTTP ou interface, o processo pode encerrar após a inicialização. Para conferir a estrutura no MySQL:
+Após iniciar, a API fica disponível em `http://localhost:8081`. A porta pode ser alterada pela variável `SERVER_PORT`. Para conferir a estrutura no MySQL:
 
 ```sql
 USE banco_saldo;
 DESCRIBE contas;
 ```
 
-## Compilar sem conectar ao banco
+## Cadastrar e consultar uma conta
+
+| Método | Endereço | Resultado |
+| --- | --- | --- |
+| POST | `/contas` | Cadastra uma conta e retorna HTTP 201 |
+| GET | `/contas/{id}` | Consulta a conta e seu saldo atual; retorna HTTP 200 |
+
+Exemplo do corpo JSON do cadastro:
+
+```json
+{
+  "numero": "1001",
+  "saldoInicial": 150.25
+}
+```
+
+### Windows PowerShell
+
+Com a aplicação executando, abra outro terminal:
+
+```powershell
+$dados = @{ numero = "1001"; saldoInicial = 150.25 } | ConvertTo-Json
+$conta = Invoke-RestMethod -Method Post -Uri "http://localhost:8081/contas" -ContentType "application/json" -Body $dados
+$conta
+Invoke-RestMethod -Uri "http://localhost:8081/contas/$($conta.id)"
+```
+
+### Linux ou macOS
+
+```bash
+curl -i -X POST http://localhost:8081/contas \
+  -H 'Content-Type: application/json' \
+  -d '{"numero":"1001","saldoInicial":150.25}'
+
+# Substitua 1 pelo id devolvido no cadastro.
+curl -i http://localhost:8081/contas/1
+```
+
+A resposta contém `id`, `numero` e `saldo`. O cabeçalho `Location` do cadastro informa o endereço de consulta. O arquivo `saldo-service/contas.http` também contém exemplos para clientes HTTP de IDEs.
+
+Se cadastrar novamente o mesmo número, a API retorna HTTP 409. Para criar outra conta, utilize outro número.
+
+| Situação | Resposta HTTP |
+| --- | --- |
+| Dados obrigatórios ausentes, saldo inválido ou JSON inválido | 400 |
+| Identificador com formato inválido, como `/contas/abc` | 400 |
+| Conta não encontrada | 404 |
+| Número de conta já cadastrado | 409 |
+
+Os erros retornam um JSON com `mensagem` e `detalhes`.
+
+## Conferir a persistência após reiniciar
+
+1. Cadastre uma conta e anote o `id` retornado.
+2. Confira o registro diretamente no MySQL:
+
+```sql
+SELECT id, numero, saldo FROM banco_saldo.contas;
+```
+
+3. Encerre a aplicação com `Ctrl+C` e inicie novamente, mantendo a mesma configuração de conexão.
+4. Consulte `/contas/{id}` com o identificador anotado. O número e o saldo devem continuar disponíveis.
+
+Essa verificação demonstra que os dados estão no MySQL, e não apenas na memória da aplicação.
+
+## Compilar
 
 Dentro de `saldo-service`, execute:
 
@@ -139,4 +218,30 @@ No Linux ou macOS:
 ./mvnw clean package
 ```
 
-A compilação gera o JAR em `saldo-service/target/`. Compilar não comprova a conexão nem a persistência no MySQL; a gravação, a consulta e a permanência dos dados serão verificadas nas próximas etapas.
+A compilação gera o JAR em `saldo-service/target/`. O comando `clean package` não precisa de uma conexão com MySQL e não executa os testes de integração.
+
+## Testes de integração com MySQL
+
+Os testes utilizam Testcontainers para iniciar um MySQL 8.4 temporário. É necessário ter Docker em execução. A aplicação normal utiliza o MySQL configurado nas variáveis de ambiente; Docker é necessário somente para executar estes testes.
+
+Dentro de `saldo-service`, execute no Windows:
+
+```powershell
+.\mvnw.cmd -Pmysql-it clean verify
+```
+
+No Linux ou macOS:
+
+```bash
+./mvnw -Pmysql-it clean verify
+```
+
+Os testes verificam:
+
+- Gravação pela API, consulta direta no MySQL e consulta HTTP após reiniciar a aplicação.
+- Rejeição de dados inválidos sem gravar registros.
+- Cadastro com saldo zero e rejeição de número repetido sem alterar a conta existente.
+- Respostas para conta inexistente e identificador inválido.
+- Duas tentativas simultâneas de cadastro com o mesmo número, persistindo apenas uma conta.
+
+Os testes usam exclusivamente a base temporária do contêiner, com credenciais próprias, e não dependem da senha do MySQL local. Os relatórios ficam em `saldo-service/target/failsafe-reports/`.

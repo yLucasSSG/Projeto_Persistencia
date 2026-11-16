@@ -1,0 +1,23 @@
+@baseUrl = http://localhost:8081
+@contaId = 1
+
+### Cadastrar conta; ao repetir o número, a resposta será HTTP 409.
+POST {{baseUrl}}/contas
+Content-Type: application/json
+
+{
+  "numero": "1001",
+  "saldoInicial": 150.25
+}
+
+### Consultar: ajuste contaId para o identificador devolvido no cadastro.
+GET {{baseUrl}}/contas/{{contaId}}
+
+### Saldo negativo deve retornar HTTP 400.
+POST {{baseUrl}}/contas
+Content-Type: application/json
+
+{
+  "numero": "1002",
+  "saldoInicial": -10.00
+}
