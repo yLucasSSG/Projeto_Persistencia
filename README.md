@@ -10,7 +10,7 @@ O enunciado permite SQLite, mas este projeto utiliza MySQL. O foco é a persist�
 
 ## Desenvolvimento por etapas
 
-O projeto está na **etapa 4: persistência e processamento de transferências**. Esta versão ainda não é a entrega completa: falta a persistência de Pagamentos.
+O projeto está na **etapa 5: persistência de pagamentos e transferências**. A implementação das três áreas está pronta; a conferência integrada e a documentação final são a etapa seguinte.
 
 | Etapa | Situação |
 | --- | --- |
@@ -21,7 +21,7 @@ O projeto está na **etapa 4: persistência e processamento de transferências**
 | Consultar o saldo atual da conta | Implementada |
 | Implementar débito de saldo e tratar saldo insuficiente | Implementada |
 | Implementar a persistência de Transferências | Implementada |
-| Implementar a persistência de Pagamentos | Pendente |
+| Implementar a persistência de Pagamentos | Implementada |
 | Verificar contas após reiniciar a aplicação | Verificada no teste de integração |
 
 ## Relação com os diagramas
@@ -34,7 +34,7 @@ Os três serviços mantêm as responsabilidades definidas nos diagramas:
 | Transferências | Identificador da transação, origem, destino, valor, modalidade e situação |
 | Pagamentos | Identificador da transação, conta, destino ou código de barras, valor, modalidade e situação |
 
-Cada serviço terá uma aplicação Spring Boot e uma base própria no mesmo servidor MySQL. Os serviços Saldo e Transferências já estão implementados. O saldo fica armazenado em Conta; o nome do serviço não obriga a criação de uma entidade chamada Saldo.
+Cada serviço terá uma aplicação Spring Boot e uma base própria no mesmo servidor MySQL. Os serviços Saldo, Transferências e Pagamentos estão implementados. O saldo fica armazenado em Conta; o nome do serviço não obriga a criação de uma entidade chamada Saldo.
 
 As transferências contemplarão PIX, TED e DOC, e os pagamentos contemplarão PIX, boleto e saldo em conta. DOC será mantido no modelo didático por fazer parte do enunciado.
 
@@ -90,7 +90,7 @@ O fluxo é **Controller → Service → Repository → MySQL**. Os DTOs definem 
 
 No cadastro, o número é obrigatório, tem até 30 caracteres e é armazenado sem espaços nas extremidades. O saldo inicial é obrigatório, não pode ser negativo e aceita até 17 dígitos inteiros e 2 casas decimais. Valores com casas decimais excedentes são rejeitados, sem arredondamento silencioso. A restrição única do MySQL impede que duas requisições cadastrem o mesmo número de conta.
 
-O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. Pagamentos será implementado na próxima etapa.
+O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. As ordens de transferência e pagamento utilizam o serviço Saldo para autorizar o débito.
 
 ### Débito atômico
 
@@ -291,3 +291,17 @@ Reenviar o mesmo UUID e os mesmos dados devolve a ordem existente sem repetir o 
 O adaptador `BancoCentralSimulado` registra a comunicação na tabela `comunicacoes_banco_central`, gerando um protocolo com prefixo `SIM-`. Não há chamada ao Banco Central real, liquidação externa ou crédito real no destino. DOC é mantido para atender ao cenário didático.
 
 Os testes de Transferências usam MySQL real em Testcontainers e um simulador HTTP de Saldo, verificando todas as modalidades, reinício, saldo insuficiente, repetição, concorrência e retomada de ordens pendentes. Execute `./mvnw -Pmysql-it clean verify` nessa pasta, ou `mvnw.cmd` no Windows.
+
+
+## Pagamentos
+
+O serviço `pagamentos-service` utiliza a porta 8083 e a base `banco_pagamentos`. Execute `database/03-criar-banco-pagamentos.sql` e inicie o serviço em um terceiro terminal com `MYSQL_DATABASE=banco_pagamentos`, a conexão MySQL configurada e Saldo em execução.
+
+- `POST /pagamentos`: registra e processa PIX, boleto ou saldo em conta.
+- `GET /pagamentos/{idTransacao}`: consulta uma ordem persistida.
+
+O corpo segue o modelo de Transferências, com as modalidades `PIX`, `BOLETO` e `SALDO_EM_CONTA`. PIX e saldo em conta exigem `destino`. Boleto exige `codigoBarras` e não recebe `destino`. Veja os três exemplos em `pagamentos-service/pagamentos.http`.
+
+Todas as modalidades concluídas geram uma comunicação persistida ao Banco Central simulado, inclusive saldo em conta, conforme a regra do professor. Os caminhos de saldo insuficiente, repetição e retomada são os mesmos de Transferências. Cada serviço possui suas próprias tabelas de ordens e comunicações.
+
+Os testes de Pagamentos incluem a validação dos campos específicos de boleto e das demais modalidades. Execute `./mvnw -Pmysql-it clean verify` na pasta do serviço, ou `mvnw.cmd` no Windows.
