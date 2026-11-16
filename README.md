@@ -10,7 +10,7 @@ O enunciado permite SQLite, mas este projeto utiliza MySQL. O foco é a persist�
 
 ## Desenvolvimento por etapas
 
-O projeto está na **etapa 3: débito atômico e idempotência**. Esta versão ainda não é a entrega completa: falta a persistência de Transferências e Pagamentos.
+O projeto está na **etapa 4: persistência e processamento de transferências**. Esta versão ainda não é a entrega completa: falta a persistência de Pagamentos.
 
 | Etapa | Situação |
 | --- | --- |
@@ -20,7 +20,7 @@ O projeto está na **etapa 3: débito atômico e idempotência**. Esta versão a
 | Validar cadastro e impedir números de conta repetidos | Implementada |
 | Consultar o saldo atual da conta | Implementada |
 | Implementar débito de saldo e tratar saldo insuficiente | Implementada |
-| Implementar a persistência de Transferências | Pendente |
+| Implementar a persistência de Transferências | Implementada |
 | Implementar a persistência de Pagamentos | Pendente |
 | Verificar contas após reiniciar a aplicação | Verificada no teste de integração |
 
@@ -34,7 +34,7 @@ Os três serviços mantêm as responsabilidades definidas nos diagramas:
 | Transferências | Identificador da transação, origem, destino, valor, modalidade e situação |
 | Pagamentos | Identificador da transação, conta, destino ou código de barras, valor, modalidade e situação |
 
-Cada serviço terá uma aplicação Spring Boot e uma base própria no mesmo servidor MySQL. Neste momento, somente o serviço Saldo foi iniciado. O saldo fica armazenado em Conta; o nome do serviço não obriga a criação de uma entidade chamada Saldo.
+Cada serviço terá uma aplicação Spring Boot e uma base própria no mesmo servidor MySQL. Os serviços Saldo e Transferências já estão implementados. O saldo fica armazenado em Conta; o nome do serviço não obriga a criação de uma entidade chamada Saldo.
 
 As transferências contemplarão PIX, TED e DOC, e os pagamentos contemplarão PIX, boleto e saldo em conta. DOC será mantido no modelo didático por fazer parte do enunciado.
 
@@ -90,7 +90,7 @@ O fluxo é **Controller → Service → Repository → MySQL**. Os DTOs definem 
 
 No cadastro, o número é obrigatório, tem até 30 caracteres e é armazenado sem espaços nas extremidades. O saldo inicial é obrigatório, não pode ser negativo e aceita até 17 dígitos inteiros e 2 casas decimais. Valores com casas decimais excedentes são rejeitados, sem arredondamento silencioso. A restrição única do MySQL impede que duas requisições cadastrem o mesmo número de conta.
 
-O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. Transferências e pagamentos serão implementados nas próximas etapas.
+O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. Pagamentos será implementado na próxima etapa.
 
 ### Débito atômico
 
@@ -261,3 +261,33 @@ Os testes verificam:
 - Duas tentativas simultâneas de cadastro com o mesmo número, persistindo apenas uma conta.
 
 Os testes usam exclusivamente a base temporária do contêiner, com credenciais próprias, e não dependem da senha do MySQL local. Os relatórios ficam em `saldo-service/target/failsafe-reports/`.
+
+
+## Transferências
+
+O serviço `transferencias-service` utiliza a porta 8082 e a base `banco_transferencias`. Execute `database/02-criar-banco-transferencias.sql` e inicie o serviço em outro terminal, com as variáveis da conexão MySQL configuradas e `MYSQL_DATABASE=banco_transferencias`. Depois execute o Maven Wrapper na pasta `transferencias-service`.
+
+`SALDO_URL` define a URL de Saldo e usa `http://localhost:8081` por padrão. Cada aplicação precisa de seu próprio terminal e de sua própria configuração de base e porta. Não reutilize a base `banco_saldo` para Transferências.
+
+- `POST /transferencias`: registra e processa uma ordem PIX, TED ou DOC.
+- `GET /transferencias/{idTransacao}`: consulta uma ordem persistida.
+
+Exemplo de JSON:
+
+```json
+{
+  "idTransacao": "7097fe9d-0405-4809-86b9-6ba794b29ec7",
+  "contaId": 1,
+  "destino": "chave-pix-destino",
+  "valor": 10.00,
+  "modalidade": "PIX"
+}
+```
+
+A solicitação é gravada como `PENDENTE` antes de chamar Saldo. Se autorizada, a ordem e sua comunicação ao Banco Central simulado são confirmadas na base de Transferências. Se faltar saldo, a situação fica `SALDO_INSUFICIENTE`. Uma indisponibilidade de Saldo retorna HTTP 503 e mantém a ordem pendente para reenvio com os mesmos dados.
+
+Reenviar o mesmo UUID e os mesmos dados devolve a ordem existente sem repetir o débito nem a comunicação. Alterar os dados de um UUID já utilizado retorna HTTP 409. Os endpoints de operação retornam HTTP 200 com a situação de negócio.
+
+O adaptador `BancoCentralSimulado` registra a comunicação na tabela `comunicacoes_banco_central`, gerando um protocolo com prefixo `SIM-`. Não há chamada ao Banco Central real, liquidação externa ou crédito real no destino. DOC é mantido para atender ao cenário didático.
+
+Os testes de Transferências usam MySQL real em Testcontainers e um simulador HTTP de Saldo, verificando todas as modalidades, reinício, saldo insuficiente, repetição, concorrência e retomada de ordens pendentes. Execute `./mvnw -Pmysql-it clean verify` nessa pasta, ou `mvnw.cmd` no Windows.
