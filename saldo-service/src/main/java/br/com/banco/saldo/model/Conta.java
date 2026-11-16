@@ -43,4 +43,15 @@ public class Conta {
     public BigDecimal getSaldo() {
         return saldo;
     }
+
+    public boolean debitar(BigDecimal valor) {
+        if (valor == null || valor.signum() <= 0) {
+            throw new IllegalArgumentException("O valor do débito deve ser positivo.");
+        }
+        if (saldo.compareTo(valor) < 0) {
+            return false;
+        }
+        saldo = saldo.subtract(valor);
+        return true;
+    }
 }

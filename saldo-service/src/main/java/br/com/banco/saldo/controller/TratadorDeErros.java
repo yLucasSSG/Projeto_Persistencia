@@ -3,6 +3,7 @@ package br.com.banco.saldo.controller;
 import br.com.banco.saldo.dto.ErroResponse;
 import br.com.banco.saldo.exception.ContaJaExisteException;
 import br.com.banco.saldo.exception.ContaNaoEncontradaException;
+import br.com.banco.saldo.exception.TransacaoConflitanteException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -28,7 +29,7 @@ public class TratadorDeErros {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErroResponse> tratarJsonInvalido() {
         return ResponseEntity.badRequest().body(new ErroResponse(
-                "Envie um JSON válido com numero e saldoInicial numérico.", List.of()));
+                "Envie um JSON válido com os campos e tipos esperados para a operação.", List.of()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -45,6 +46,12 @@ public class TratadorDeErros {
 
     @ExceptionHandler(ContaJaExisteException.class)
     public ResponseEntity<ErroResponse> tratarContaJaExiste(ContaJaExisteException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErroResponse(exception.getMessage(), List.of()));
+    }
+
+    @ExceptionHandler(TransacaoConflitanteException.class)
+    public ResponseEntity<ErroResponse> tratarTransacaoConflitante(TransacaoConflitanteException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErroResponse(exception.getMessage(), List.of()));
     }

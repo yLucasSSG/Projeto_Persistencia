@@ -10,7 +10,7 @@ O enunciado permite SQLite, mas este projeto utiliza MySQL. O foco é a persist�
 
 ## Desenvolvimento por etapas
 
-O projeto está na **etapa 2: cadastro e consulta de contas no MySQL**. Esta versão ainda não é a entrega completa: falta a persistência de Transferências e Pagamentos.
+O projeto está na **etapa 3: débito atômico e idempotência**. Esta versão ainda não é a entrega completa: falta a persistência de Transferências e Pagamentos.
 
 | Etapa | Situação |
 | --- | --- |
@@ -19,7 +19,7 @@ O projeto está na **etapa 2: cadastro e consulta de contas no MySQL**. Esta ver
 | Gravar e consultar contas no MySQL pela API | Implementada |
 | Validar cadastro e impedir números de conta repetidos | Implementada |
 | Consultar o saldo atual da conta | Implementada |
-| Implementar débito de saldo e tratar saldo insuficiente | Próxima etapa |
+| Implementar débito de saldo e tratar saldo insuficiente | Implementada |
 | Implementar a persistência de Transferências | Pendente |
 | Implementar a persistência de Pagamentos | Pendente |
 | Verificar contas após reiniciar a aplicação | Verificada no teste de integração |
@@ -90,7 +90,23 @@ O fluxo é **Controller → Service → Repository → MySQL**. Os DTOs definem 
 
 No cadastro, o número é obrigatório, tem até 30 caracteres e é armazenado sem espaços nas extremidades. O saldo inicial é obrigatório, não pode ser negativo e aceita até 17 dígitos inteiros e 2 casas decimais. Valores com casas decimais excedentes são rejeitados, sem arredondamento silencioso. A restrição única do MySQL impede que duas requisições cadastrem o mesmo número de conta.
 
-O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. Débitos, transferências e pagamentos serão implementados nas próximas etapas.
+O cadastro com saldo inicial é uma operação de apoio para demonstrar a persistência. Não há operação de edição direta do saldo. Transferências e pagamentos serão implementados nas próximas etapas.
+
+### Débito atômico
+
+`POST /contas/{id}/debitos` recebe `idTransacao` (UUID) `valor` positivo, com no máximo duas casas decimais, e `referencia` da operação. Retorna `AUTORIZADO` ou `SALDO_INSUFICIENTE`. Ambos são resultados de negócio com HTTP 200.
+
+```json
+{
+  "idTransacao": "8752570c-bf72-4ba5-a27c-e1c4c88b7b18",
+  "valor": 30.25,
+  "referencia": "DEBITO-DEMONSTRACAO"
+}
+```
+
+Saldo bloqueia a conta para escrita durante a transação no MySQL. A validação, o desconto e o registro em `debitos` são confirmados juntos. Operações simultâneas não conseguem gastar o mesmo saldo.
+
+Reenviar o mesmo identificador, conta, valor e referência devolve o resultado registrado sem novo desconto, inclusive após reiniciar a aplicação. Reutilizar o identificador com dados diferentes retorna HTTP 409. Uma tentativa recusada também permanece registrada; para tentar uma nova operação, utilize um novo identificador.
 
 ## Preparar o MySQL
 
