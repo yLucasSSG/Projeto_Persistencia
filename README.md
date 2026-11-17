@@ -47,7 +47,7 @@ Transferência e pagamento seguem o mesmo fluxo, em `TransferenciaService.transf
 
 Requisitos: JDK 21 e MySQL em execução. Os três bancos são criados sozinhos.
 
-Usuário e senha ficam em `application.properties` de cada serviço (padrão: usuário `root`, senha da variável `MYSQL_PASSWORD`). **Abra 3 terminais** na raiz do projeto e **inicie o Saldo primeiro**:
+A conexão é configurada por variáveis de ambiente, com estes padrões: `MYSQL_HOST=localhost`, `MYSQL_PORT=3306`, `MYSQL_USER=root` e `MYSQL_PASSWORD` vazia. Se o seu MySQL usa outra porta ou usuário, defina a variável correspondente (por exemplo, `$env:MYSQL_PORT = "3307"`) nos três terminais, além da senha. **Abra 3 terminais** na raiz do projeto e **inicie o Saldo primeiro**:
 
 ```powershell
 # Terminal 1 - Saldo (8081)
